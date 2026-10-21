@@ -79,10 +79,32 @@ def clean_text(value):
 
 
 @st.cache_data
-def read_excel(file_bytes):
-    """讀取上傳的 Excel 檔案，並保留原始資料格式。"""
+def get_excel_sheet_names(file_bytes):
+    """
+    讀取 Excel 的所有工作表名稱。
+
+    回傳 list，可以被 st.cache_data 正常快取。
+    """
     excel_file = pd.ExcelFile(io.BytesIO(file_bytes), engine="openpyxl")
-    return excel_file
+    return list(excel_file.sheet_names)
+
+
+@st.cache_data
+def read_excel_sheet(file_bytes, sheet_name):
+    """
+    讀取 Excel 中指定工作表，並回傳 DataFrame。
+
+    注意：
+    - 這裡快取的是 DataFrame，不是 pandas.ExcelFile。
+    - DataFrame 可以被 st.cache_data 序列化。
+    """
+    df = pd.read_excel(
+        io.BytesIO(file_bytes),
+        sheet_name=sheet_name,
+        dtype=object,  # 保留原始值，避免 pandas 自動改變資料類型。
+        keep_default_na=False  # 保留 NULL、N/A 等文字。
+    )
+    return df
 
 
 def make_excel_download(complete_df, incomplete_df, other_df, diagnostic_df):
@@ -165,14 +187,14 @@ st.success(f"已成功上傳：{uploaded_file.name}")  # 顯示上傳檔名。
 # ============================================================
 
 try:
-    excel_file = read_excel(uploaded_file.getvalue())  # 讀取 Excel。
+    sheet_names = get_excel_sheet_names(uploaded_file.getvalue())  # 取得工作表名稱。
 except Exception as error:
     st.error(f"無法讀取 Excel 檔案：{error}")
     st.stop()
 
-st.write("Excel 內的工作表：", excel_file.sheet_names)  # 顯示實際工作表。
+st.write("Excel 內的工作表：", sheet_names)  # 顯示實際工作表。
 
-if SOURCE_SHEET not in excel_file.sheet_names:
+if SOURCE_SHEET not in sheet_names:
     st.error(
         f"找不到工作表 `{SOURCE_SHEET}`。\n\n"
         f"請確認 Excel 內是否包含此工作表，或修改 `app.py` 頂部的 `SOURCE_SHEET`。"
@@ -180,12 +202,10 @@ if SOURCE_SHEET not in excel_file.sheet_names:
     st.stop()
 
 try:
-    df = pd.read_excel(
-        excel_file,
-        sheet_name=SOURCE_SHEET,
-        dtype=object,  # 保留原始值，避免 pandas 自動改變資料類型。
-        keep_default_na=False  # 保留 NULL、N/A 等文字。
-    )
+    df = read_excel_sheet(
+        uploaded_file.getvalue(),
+        SOURCE_SHEET
+    )  # 讀取指定工作表。
 except Exception as error:
     st.error(f"讀取工作表 `{SOURCE_SHEET}` 時發生錯誤：{error}")
     st.stop()
